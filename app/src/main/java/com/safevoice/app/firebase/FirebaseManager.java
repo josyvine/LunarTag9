@@ -6,12 +6,16 @@ import android.util.Log;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Manages the dynamic initialization of the Firebase backend.
@@ -32,31 +36,21 @@ public class FirebaseManager {
      * @param context The application context.
      */
     public static void initialize(Context context) {
-        // Only initialize if no FirebaseApp has been initialized yet.
         if (FirebaseApp.getApps(context).isEmpty()) {
-            FirebaseOptions options = null;
             File userConfigFile = new File(context.getFilesDir(), USER_CONFIG_FILENAME);
 
             if (userConfigFile.exists()) {
                 Log.d(TAG, "User-provided Firebase config found. Initializing...");
-                FileInputStream fis = null;
                 try {
-                    fis = new FileInputStream(userConfigFile);
-                    options = FirebaseOptions.fromStream(fis);
+                    // --- THIS IS THE FIX ---
+                    // The fromStream() method is deprecated. We now manually parse the JSON
+                    // and use the FirebaseOptions.Builder to create the configuration.
+                    FirebaseOptions options = buildOptionsFromJson(new FileInputStream(userConfigFile));
                     FirebaseApp.initializeApp(context, options);
                     Log.d(TAG, "Firebase initialized successfully with USER config.");
-                } catch (IOException e) {
-                    Log.e(TAG, "Failed to read user-provided Firebase config. Falling back to default.", e);
-                    // If parsing the user file fails, fall back to default.
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to read or parse user-provided Firebase config. Falling back to default.", e);
                     initializeAppWithDefault(context);
-                } finally {
-                    if (fis != null) {
-                        try {
-                            fis.close();
-                        } catch (IOException e) {
-                            Log.e(TAG, "Error closing file input stream.", e);
-                        }
-                    }
                 }
             } else {
                 Log.d(TAG, "No user-provided Firebase config found. Initializing with default.");
@@ -68,12 +62,40 @@ public class FirebaseManager {
     }
 
     /**
+     * Helper method to parse a JSON InputStream and build FirebaseOptions.
+     */
+    private static FirebaseOptions buildOptionsFromJson(InputStream inputStream) throws IOException, org.json.JSONException {
+        // Read the entire file stream into a string
+        int size = inputStream.available();
+        byte[] buffer = new byte[size];
+        inputStream.read(buffer);
+        inputStream.close();
+        String json = new String(buffer, StandardCharsets.UTF_8);
+
+        // Parse the JSON string
+        JSONObject root = new JSONObject(json);
+        JSONObject projectInfo = root.getJSONObject("project_info");
+        JSONArray clientArray = root.getJSONArray("client");
+        JSONObject client = clientArray.getJSONObject(0);
+        JSONObject clientInfo = client.getJSONObject("client_info");
+        JSONArray apiKeyArray = client.getJSONArray("api_key");
+        JSONObject apiKey = apiKeyArray.getJSONObject(0);
+
+        // Build the FirebaseOptions object
+        return new FirebaseOptions.Builder()
+                .setApiKey(apiKey.getString("current_key"))
+                .setApplicationId(clientInfo.getString("mobilesdk_app_id"))
+                .setProjectId(projectInfo.getString("project_id"))
+                .setStorageBucket(projectInfo.getString("storage_bucket"))
+                .build();
+    }
+
+    /**
      * Helper method to initialize Firebase using the default bundled configuration.
      * @param context The application context.
      */
     private static void initializeAppWithDefault(Context context) {
         try {
-            // FirebaseOptions.fromResource() is the standard way to load the default config
             FirebaseApp.initializeApp(context);
             Log.d(TAG, "Firebase initialized successfully with DEFAULT config.");
         } catch (Exception e) {

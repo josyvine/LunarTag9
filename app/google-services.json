@@ -1,26 +1,36 @@
 {
   "project_info": {
-    "project_number": "370752218415",
-    "project_id": "hfm-app-backend",
-    "storage_bucket": "hfm-app-backend.firebasestorage.app"
+    "project_number": "1013718891067",
+    "project_id": "safevoice-a09cf",
+    "storage_bucket": "safevoice-a09cf.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:370752218415:android:534c6cdc4ac0ade9802dda",
+        "mobilesdk_app_id": "1:1013718891067:android:14fafe142776740fe57a1e",
         "android_client_info": {
-          "package_name": "com.hfm.app"
+          "package_name": "com.safevoice.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1013718891067-ogca31bvt1f2rvcf0jed41gccienmdg8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCKtutIzHMOI2CjIEm5d0EfKxa91UaPf48"
+          "current_key": "AIzaSyBIQwGtpgZw-uVvJcFndrlCb6hllGMBbs0"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1013718891067-ogca31bvt1f2rvcf0jed41gccienmdg8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

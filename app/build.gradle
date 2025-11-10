@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId "com.safevoice.app"
-        minSdkVersion 23
+        minSdkVersion 23 // Optimized for Android 6.0+ as requested
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
@@ -31,50 +31,52 @@ android {
         viewBinding true
     }
     aaptOptions {
+        // Prevents compression of the TFLite model file in the APK
         noCompress "tflite"
     }
 }
 
+// This section lists all the external libraries (libs) required for the app to function.
 dependencies {
+    // Standard UI and Core Android Libraries
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // Navigation Component for Fragments and UI
+    // Navigation Component for managing fragments and app flow
     implementation 'androidx.navigation:navigation-fragment:2.7.7'
     implementation 'androidx.navigation:navigation-ui:2.7.7'
 
-    // Firebase Bill of Materials (BoM)
+    // Firebase Bill of Materials (BoM) - manages versions for Firebase libraries
     implementation platform('com.google.firebase:firebase-bom:33.1.1')
 
-    // Firebase Services (within free tier)
+    // Firebase Services (all within the free tier)
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.firebase:firebase-database' // For WebRTC signaling (optional bonus)
 
-    // Google Play Services
+    // Google Play Services for Authentication and Location
     implementation 'com.google.android.gms:play-services-auth:21.1.0'
     implementation 'com.google.android.gms:play-services-location:21.2.0'
 
-    // ML Kit for Text Recognition
+    // Google ML Kit for on-device Text Recognition from ID cards
     implementation 'com.google.mlkit:text-recognition:16.0.0'
 
-    // TensorFlow Lite for Face Verification (using the more stable full library)
-    implementation 'org.tensorflow:tensorflow-lite:2.9.0'
-    implementation 'org.tensorflow:tensorflow-lite-gpu:2.9.0' // Optional for GPU acceleration
-    implementation 'org.tensorflow:tensorflow-lite-support:0.4.0'
+    // TensorFlow Lite for on-device Face Verification using mobilefacenet.tflite
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    implementation 'org.tensorflow:tensorflow-lite:2.15.0'
 
-    // CameraX for modern camera handling in KYC
+    // CameraX libraries for a modern, robust camera preview in KYC
     def camerax_version = "1.3.3"
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
     implementation "androidx.camera:camera-view:${camerax_version}"
 
-    // WebRTC (Optional Bonus)
+    // WebRTC library (for the optional bonus feature)
     implementation 'org.webrtc:google-webrtc:1.0.32006'
 
-    // Testing
+    // Standard Testing Libraries
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

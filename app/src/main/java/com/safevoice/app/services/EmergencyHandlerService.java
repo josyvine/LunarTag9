@@ -74,28 +74,38 @@ public class EmergencyHandlerService extends Service implements WebRTCManager.We
         return START_NOT_STICKY;
     }
 
-    // --- THIS IS THE UPDATED METHOD ---
+    // --- THIS IS THE CORRECTED METHOD ---
     private void executeEmergencyActions(Location location) {
         ContactsManager contactsManager = ContactsManager.getInstance(this);
         Contact primaryContact = contactsManager.getPrimaryContact();
         List<Contact> priorityContacts = contactsManager.getPriorityContacts();
 
-        // First, always send an SMS to all priority contacts.
-        // This runs immediately, whether online or offline.
+        // --- FIX 1: SEND SMS TO THE PRIMARY CONTACT ---
+        // This ensures the primary contact ALWAYS gets an SMS.
+        if (primaryContact != null && primaryContact.getPhoneNumber() != null && !primaryContact.getPhoneNumber().isEmpty()) {
+            sendSmsAlert(primaryContact.getPhoneNumber(), location);
+        } else {
+            Log.w(TAG, "No primary contact with a phone number set. Cannot send primary SMS.");
+        }
+
+        // --- FIX 2: ALSO SEND SMS TO ALL OTHER PRIORITY CONTACTS ---
         if (priorityContacts != null && !priorityContacts.isEmpty()) {
             for (Contact contact : priorityContacts) {
                 if (contact.getPhoneNumber() != null && !contact.getPhoneNumber().isEmpty()) {
-                    sendSmsAlert(contact.getPhoneNumber(), location);
+                    // This check prevents sending a duplicate SMS if the primary contact is also a priority contact
+                    if (primaryContact == null || !contact.equals(primaryContact)) {
+                        sendSmsAlert(contact.getPhoneNumber(), location);
+                    }
                 }
             }
         } else {
-            Log.w(TAG, "No priority contacts set. Cannot send SMS alerts.");
+            Log.w(TAG, "No additional priority contacts to send SMS to.");
         }
 
         if (isOnline()) {
             Log.d(TAG, "Device is ONLINE. Executing advanced plan.");
 
-            // The SMS is already sent. Now, also send the in-app FCM alerts.
+            // The SMS alerts are already sent. Now, send the in-app FCM alerts.
             sendFcmAlertsToAll(priorityContacts, location);
 
             // Smart Calling
@@ -112,7 +122,7 @@ public class EmergencyHandlerService extends Service implements WebRTCManager.We
             }
         } else {
             Log.d(TAG, "Device is OFFLINE. Executing fallback plan.");
-            // The SMS is already sent. Now just make the standard call.
+            // The SMS alerts are already sent. Now just make the standard call.
             makeStandardPhoneCall(primaryContact);
             stopSelf();
         }
@@ -129,10 +139,6 @@ public class EmergencyHandlerService extends Service implements WebRTCManager.We
     private void startWebRtcCall(String targetUid) {
         webRTCManager.startCall(targetUid);
     }
-
-    // --- THIS METHOD IS NO LONGER NEEDED AND HAS BEEN REMOVED ---
-    // private void sendSmsToAll(...) { ... }
-
 
     private void sendFcmAlertsToAll(List<Contact> contacts, Location location) {
         FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
@@ -201,7 +207,6 @@ public class EmergencyHandlerService extends Service implements WebRTCManager.We
         }
     }
 
-    // --- THIS IS THE RESTORED SMS METHOD FROM YOUR OLD APP ---
     private void sendSmsAlert(String phoneNumber, Location location) {
         if (phoneNumber == null || phoneNumber.isEmpty() || phoneNumber.equals("No number provided")) {
             Log.e(TAG, "Phone number is invalid for SMS.");

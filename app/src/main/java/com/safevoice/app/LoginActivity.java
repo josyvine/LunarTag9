@@ -1,5 +1,3 @@
-// PASTE THIS ENTIRE CODE BLOCK TO REPLACE YOUR EXISTING LoginActivity.java FILE
-
 package com.safevoice.app;
 
 import android.content.Intent;

@@ -35,24 +35,18 @@
         app:layout_constraintTop_toBottomOf="@+id/text_emergency_title"
         tools:text="John Appleseed is in an emergency!" />
 
-
     <ImageView
         android:id="@+id/placeholder_location"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="32dp"
         android:layout_marginBottom="32dp"
-        android:contentDescription="Location map placeholder"
-        
-        // --- THIS IS THE FIX ---
-        // I replaced the missing drawable with a standard, safe background color.
         android:background="@android:color/darker_gray"
-        
+        android:contentDescription="Location map placeholder"
         app:layout_constraintBottom_toTopOf="@+id/button_join_call"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/text_emergency_message" />
-
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/button_join_call"
@@ -78,7 +72,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:strokeColor="?attr/colorOnError" />
-
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/button_dismiss_popup"

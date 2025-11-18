@@ -127,5 +127,16 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- This is the new button for accessing the admin feature -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/button_admin_schedule_editor"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Admin: Timestamp Scheduler"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
     </LinearLayout>
 </ScrollView>

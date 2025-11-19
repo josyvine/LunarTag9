@@ -1,4 +1,4 @@
-package com.lunartag.app.utils;
+package com.lunartag.app.utils; 
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

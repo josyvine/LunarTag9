@@ -95,4 +95,4 @@ public class ImageUtils {
         yuvImage.compressToJpeg(new Rect(0, 0, yuvImage.getWidth(), yuvImage.getHeight()), 100, out);
         return out.toByteArray();
     }
-}
+} 

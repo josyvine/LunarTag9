@@ -1,4 +1,4 @@
-package com.lunartag.app.ui.admin; 
+package com.lunartag.app.ui.admin;
 
 import android.app.AlertDialog;
 import android.app.TimePickerDialog;
@@ -80,8 +80,9 @@ public class ScheduleEditorFragment extends Fragment {
             }
         });
 
-        binding.recyclerViewSchedule.setLayoutManager(new LinearLayoutManager(getContext()));
-        binding.recyclerViewSchedule.setAdapter(adapter);
+        // FIX: Use the correct ID 'recyclerViewTimestamps' from your XML
+        binding.recyclerViewTimestamps.setLayoutManager(new LinearLayoutManager(getContext()));
+        binding.recyclerViewTimestamps.setAdapter(adapter);
 
         updateCountUI();
         setupClickListeners();
@@ -106,8 +107,21 @@ public class ScheduleEditorFragment extends Fragment {
     }
 
     private void updateCountUI() {
-        // Optional: You could update a text view here to show "Total Slots: X"
-        // For now, we just ensure the list refreshes
+        if (binding == null) return;
+        
+        int count = timestampList.size();
+        
+        // Update the 'Slots remaining' text
+        binding.textSlotsRemaining.setText("Slots available: " + count);
+
+        // Toggle the 'No timestamps' empty state text
+        if (count == 0) {
+            binding.textNoTimestamps.setVisibility(View.VISIBLE);
+            binding.recyclerViewTimestamps.setVisibility(View.GONE);
+        } else {
+            binding.textNoTimestamps.setVisibility(View.GONE);
+            binding.recyclerViewTimestamps.setVisibility(View.VISIBLE);
+        }
     }
 
     // --- Logic: Add Single Timestamp ---
@@ -126,15 +140,6 @@ public class ScheduleEditorFragment extends Fragment {
                 selectedTime.set(Calendar.SECOND, 0);
                 selectedTime.set(Calendar.MILLISECOND, 0);
                 
-                // If the selected time is in the past for today, maybe add it for "tomorrow"?
-                // For simplicity, we just add the raw timestamp. 
-                // The Admin logic usually implies "Next available time regardless of date", 
-                // but typically we assume the schedule is for the current working day.
-                if (selectedTime.getTimeInMillis() < System.currentTimeMillis()) {
-                     // Optional: warn user or move to next day. 
-                     // We will leave it as is, allowing past timestamps if needed for back-filling.
-                }
-
                 addTimestamp(selectedTime.getTimeInMillis());
             }
         }, hour, minute, false);
@@ -146,6 +151,7 @@ public class ScheduleEditorFragment extends Fragment {
         Collections.sort(timestampList); // Keep them in chronological order
         adapter.notifyDataSetChanged();
         saveTimestamps(timestampList);
+        updateCountUI();
         Toast.makeText(getContext(), "Timestamp Added", Toast.LENGTH_SHORT).show();
     }
 
@@ -157,10 +163,6 @@ public class ScheduleEditorFragment extends Fragment {
         builder.setMessage("Create slots from 8:00 AM to 5:00 PM?");
 
         // Set up the input logic
-        // In a real app, we would have 3 text boxes here. 
-        // To keep this file self-contained without new XML, we will use a simple preset 
-        // or a programmatic layout. Let's use a simple preset for reliability.
-        
         final EditText inputInterval = new EditText(getContext());
         inputInterval.setInputType(InputType.TYPE_CLASS_NUMBER);
         inputInterval.setHint("Interval in Minutes (Default: 15)");
@@ -197,6 +199,7 @@ public class ScheduleEditorFragment extends Fragment {
                 timestampList.clear();
                 adapter.notifyDataSetChanged();
                 saveTimestamps(timestampList);
+                updateCountUI();
                 Toast.makeText(getContext(), "Schedule Cleared", Toast.LENGTH_SHORT).show();
             }
         });
@@ -227,6 +230,7 @@ public class ScheduleEditorFragment extends Fragment {
         Collections.sort(timestampList);
         adapter.notifyDataSetChanged();
         saveTimestamps(timestampList);
+        updateCountUI();
         Toast.makeText(getContext(), "Generated " + timestampList.size() + " slots.", Toast.LENGTH_SHORT).show();
     }
 

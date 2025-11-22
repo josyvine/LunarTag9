@@ -47,7 +47,7 @@
             android:layout_marginBottom="24dp"
             android:background="?android:attr/listDivider" />
 
-        <!-- Mode Selection Card -->
+        <!-- Mode Selection Section -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -56,10 +56,15 @@
             android:textColor="?attr/colorPrimary"
             android:layout_marginBottom="12dp" />
 
-        <RadioGroup
-            android:id="@+id/radio_group_automation"
+        <!-- 
+             NOTE: RadioGroup removed. 
+             Mutual exclusion is handled in RobotFragment.java 
+             to allow for complex CardView layouts.
+        -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
             <!-- SEMI AUTOMATIC OPTION -->
             <com.google.android.material.card.MaterialCardView
@@ -114,7 +119,7 @@
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="12sp" />
 
-        </RadioGroup>
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

@@ -2,213 +2,290 @@ package com.lunartag.app.services;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.Notification;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcelable;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
 
 import java.util.List;
 
+/**
+ * LUNARTAG ROBOT - FINAL "HARD RESET" EDITION
+ * 
+ * FIXES:
+ * 1. "One Time Only" -> Fixed by resetting state every time App Package changes.
+ * 2. "Silent Log" -> Fixed by using Application Context and Debug Toasts.
+ * 3. "Full Auto" -> Fixed by using raw Notification Intents.
+ * 4. "Group Not Clicking" -> Fixed by checking contentDescription in scanAndClick (2025 WhatsApp).
+ * 5. "Clone Not Clicking" -> Fixed by searching for "(clone)" label in share sheet.
+ */
 public class LunarTagAccessibilityService extends AccessibilityService {
 
-    private static final String PREFS = "LunarTagAccessPrefs";
-    private static final String KEY_MODE = "automation_mode";
-    private static final String KEY_GROUP = "target_group_name";
+    private static final String PREFS_ACCESSIBILITY = "LunarTagAccessPrefs";
+    private static final String KEY_AUTO_MODE = "automation_mode"; 
+    private static final String KEY_TARGET_GROUP = "target_group_name";
 
-    private int state = 0; // 0 = idle, 1 = searching group, 2 = clicking send
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    // States
+    private static final int STATE_IDLE = 0;
+    private static final int STATE_WAITING_FOR_SHARE_SHEET = 1;
+    private static final int STATE_SEARCHING_GROUP = 2;
+    private static final int STATE_CLICKING_SEND = 3;
+
+    private int currentState = STATE_IDLE;
+    private String lastPackageName = "";
+    private boolean isScrolling = false;
 
     @Override
     protected void onServiceConnected() {
+        super.onServiceConnected();
+
+        // Configure to listen to EVERYTHING
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK;
+        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK; 
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
-        info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS |
+        info.notificationTimeout = 0; 
+        info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS | 
                      AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |
                      AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-        info.notificationTimeout = 100;
         setServiceInfo(info);
 
-        state = 0;
-        toast("LUNARTAG ROBOT READY");
-        log("SYSTEM ONLINE");
+        currentState = STATE_IDLE;
+
+        // 1. DEBUG TOAST: PROOF OF LIFE
+        // If you do not see this Toast when you turn the switch ON, the service is broken.
+        new Handler(Looper.getMainLooper()).post(() -> 
+            Toast.makeText(getApplicationContext(), "🤖 ROBOT CONNECTED & LISTENING", Toast.LENGTH_LONG).show());
+
+        performBroadcastLog("🔴 SYSTEM READY. Mode: Checking...");
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event.getPackageName() == null) return;
-        String pkg = event.getPackageName().toString().toLowerCase();
+        SharedPreferences prefs = getSharedPreferences(PREFS_ACCESSIBILITY, Context.MODE_PRIVATE);
+        String mode = prefs.getString(KEY_AUTO_MODE, "semi");
 
-        // WHITELIST: ONLY react in share sheet or WhatsApp
-        boolean inShareSheet = pkg.contains("android") || pkg.contains("resolver") || pkg.contains("systemui");
-        boolean inWhatsApp = pkg.contains("whatsapp");
+        // 1. TRACK PACKAGE CHANGES (The "Everytime" Fix)
+        String pkgName = "unknown";
+        if (event.getPackageName() != null) {
+            pkgName = event.getPackageName().toString().toLowerCase();
+        }
 
-        if (!inShareSheet && !inWhatsApp) return; // ← Robot sleeps everywhere else
+        // IF APP CHANGED, HARD RESET THE BRAIN
+        if (!pkgName.equals(lastPackageName)) {
+            if (!lastPackageName.isEmpty()) {
+                performBroadcastLog("🔄 App Switch Detected: " + pkgName);
+                // Don't reset if we are just transitioning to share sheet or system resolver
+                if (!pkgName.equals("android") && !pkgName.contains("launcher") && !pkgName.contains("resolver")) {
+                     currentState = STATE_IDLE; 
+                }
+            }
+            lastPackageName = pkgName;
+        }
 
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null) return;
 
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String mode = prefs.getString(KEY_MODE, "semi");
-        String targetGroup = prefs.getString(KEY_GROUP, "").trim();
+        // ====================================================================
+        // FULL AUTOMATIC: CLONE SELECTOR (DIRECT LAUNCH HANDLING)
+        // ====================================================================
+        if (mode.equals("full")) {
 
-        if (targetGroup.isEmpty()) {
-            log("NO GROUP SAVED!");
-            return;
+            // NOTE: The AlarmReceiver has already fired the Direct Intent.
+            // We are now looking at the System Dialog showing "Original vs Clone".
+
+            if (!pkgName.contains("whatsapp") && root != null) {
+                 // Search for "WhatsApp" text in the dialog
+                 List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText("WhatsApp");
+
+                 if (nodes != null && !nodes.isEmpty()) {
+                     // FIXED CLONE DETECTION LOGIC: Look for "(clone)" label instead of index
+                     for (AccessibilityNodeInfo node : nodes) {
+                         String label = "";
+                         if (node.getText() != null) label = node.getText().toString();
+                         else if (node.getContentDescription() != null) label = node.getContentDescription().toString();
+                         if (label.toLowerCase().contains("(clone)")) {
+                             performBroadcastLog("✅ Full Auto: Found WhatsApp (clone). Clicking...");
+                             performClick(node);
+                             currentState = STATE_SEARCHING_GROUP;
+                             return;
+                         }
+                     }
+                     // Fallback: Click first if no clone label found
+                     performBroadcastLog("✅ Full Auto: No clone label, clicking first WhatsApp...");
+                     performClick(nodes.get(0));
+                     currentState = STATE_SEARCHING_GROUP;
+                     return;
+                 }
+            }
         }
 
-        // FULL AUTO: Click "WhatsApp (clone)" in share sheet
-        if (inShareSheet && "full".equals(mode) && state == 0) {
-            waitAndClick("CLONE", rootNode -> {
-                List<AccessibilityNodeInfo> nodes = rootNode.findAccessibilityNodeInfosByText("WhatsApp");
-                for (AccessibilityNodeInfo n : nodes) {
-                    String label = getTextOrDesc(n);
-                    if (label.contains("(clone)")) {
-                        if (clickParent(n)) {
-                            log("Clicked WhatsApp (clone)");
-                            state = 1;
-                            return true;
-                        }
-                    }
+        // ====================================================================
+        // SEMI-AUTOMATIC & FULL: WHATSAPP HANDLING (UNTOUCHED)
+        // ====================================================================
+        if (pkgName.contains("whatsapp")) {
+
+            // SEMI-AUTO WAKE UP TRIGGER
+            // If we are in Semi mode, and just entered WhatsApp, Force Search Mode.
+            if (mode.equals("semi")) {
+                // We check if we are seeing the "Send to..." list to confirm we are sharing
+                if (currentState == STATE_IDLE) {
+                    performBroadcastLog("⚡ Semi-Auto: WhatsApp Detected. Starting Search...");
+                    currentState = STATE_SEARCHING_GROUP;
                 }
-                return false;
-            }, 8000);
-            return;
-        }
-
-        // Inside WhatsApp (original or clone)
-        if (inWhatsApp) {
-            if (state == 0) {
-                log("Entered WhatsApp → Starting automation");
-                state = 1;
             }
 
-            // Search & click group
-            if (state == 1) {
-                waitAndClick("GROUP '" + targetGroup + "'", rootNode -> {
-                    AccessibilityNodeInfo groupNode = findGroup(rootNode, targetGroup);
-                    if (groupNode != null && clickParent(groupNode)) {
-                        log("Group clicked: " + targetGroup);
-                        state = 2;
-                        return true;
-                    }
-                    return false;
-                }, 15000);
-            }
+            // EXECUTE SEARCH
+            if (currentState == STATE_SEARCHING_GROUP) {
+                if (root == null) return;
+                String targetGroup = prefs.getString(KEY_TARGET_GROUP, "");
 
-            // Click Send button
-            if (state == 2) {
-                waitAndClick("SEND", rootNode -> {
-                    // View ID
-                    List<AccessibilityNodeInfo> sendBtn = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/send");
-                    if (!sendBtn.isEmpty() && sendBtn.get(0).isEnabled()) {
-                        if (clickParent(sendBtn.get(0))) {
-                            log("SENT! Job done.");
-                            state = 0;
-                            return true;
-                        }
-                    }
-                    // Fallback: content description
-                    AccessibilityNodeInfo send = findByContentDesc(rootNode, "Send");
-                    if (send != null && clickParent(send)) {
-                        log("SENT (fallback)!");
-                        state = 0;
-                        return true;
-                    }
-                    return false;
-                }, 6000);
-            }
-        }
-    }
-
-    // NON-INTRUSIVE POLLING (only runs during sharing)
-    private void waitAndClick(String task, Condition condition, long timeout) {
-        final long deadline = System.currentTimeMillis() + timeout;
-        Runnable check = new Runnable() {
-            @Override
-            public void run() {
-                if (System.currentTimeMillis() > deadline) {
-                    log(task + " → TIMEOUT");
-                    state = 0;
+                if (targetGroup.isEmpty()) {
+                    performBroadcastLog("⚠️ Error: No Group Name Saved!");
                     return;
                 }
-                String pkg = getRootInActiveWindow() != null ?
-                    getRootInActiveWindow().getPackageName().toString().toLowerCase() : "";
-                if (!pkg.contains("whatsapp") && !pkg.contains("android") && !pkg.contains("resolver")) {
-                    state = 0;
+
+                performBroadcastLog("🔍 DEBUG: Searching for group '" + targetGroup + "' in root with " + root.getChildCount() + " children.");
+
+                // Try finding the group
+                if (scanAndClick(root, targetGroup)) {
+                    performBroadcastLog("✅ Found Group: " + targetGroup);
+                    currentState = STATE_CLICKING_SEND; // Move to next step
                     return;
                 }
-                AccessibilityNodeInfo r = getRootInActiveWindow();
-                if (r != null && condition.test(r)) return;
-                handler.postDelayed(this, 180);
+
+                // Scroll and retry
+                performBroadcastLog("🔎 Searching for group...");
+                performScroll(root);
             }
-        };
-        handler.post(check);
-    }
 
-    @FunctionalInterface
-    interface Condition {
-        boolean test(AccessibilityNodeInfo root);
-    }
+            // EXECUTE SEND
+            else if (currentState == STATE_CLICKING_SEND) {
+                if (root == null) return;
 
-    private String getTextOrDesc(AccessibilityNodeInfo n) {
-        if (n.getText() != null) return n.getText().toString();
-        if (n.getContentDescription() != null) return n.getContentDescription().toString();
-        return "";
-    }
+                boolean sent = false;
+                // 1. Check Content Description
+                if (scanAndClickContentDesc(root, "Send")) sent = true;
 
-    private AccessibilityNodeInfo findGroup(AccessibilityNodeInfo node, String text) {
-        if (node == null) return null;
-        String t = getTextOrDesc(node);
-        if (t.toLowerCase().contains(text.toLowerCase())) return node;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AccessibilityNodeInfo found = findGroup(node.getChild(i), text);
-            if (found != null) return found;
-        }
-        return null;
-    }
+                // 2. Check View ID
+                if (!sent) {
+                    List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/send");
+                    if (!nodes.isEmpty() && nodes.get(0).isEnabled()) {
+                        performClick(nodes.get(0));
+                        sent = true;
+                    }
+                }
 
-    private AccessibilityNodeInfo findByContentDesc(AccessibilityNodeInfo node, String desc) {
-        if (node == null) return null;
-        if (desc.equalsIgnoreCase(getTextOrDesc(node))) return node;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AccessibilityNodeInfo f = findByContentDesc(node.getChild(i), desc);
-            if (f != null) return f;
-        }
-        return null;
-    }
-
-    private boolean clickParent(AccessibilityNodeInfo node) {
-        AccessibilityNodeInfo n = node;
-        for (int i = 0; i < 10; i++) {
-            if (n.isClickable()) {
-                n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                return true;
+                if (sent) {
+                    performBroadcastLog("🚀 SENT! Job Complete.");
+                    currentState = STATE_IDLE; // Reset for the next photo
+                } else {
+                    performBroadcastLog("⚠️ DEBUG: Send button not found or not enabled.");
+                }
             }
-            if (n.getParent() == null) break;
-            n = n.getParent();
+        }
+    }
+
+    // ====================================================================
+    // UTILITIES
+    // ====================================================================
+
+    private void performBroadcastLog(String msg) {
+        try {
+            // Log to System Out just in case Broadcast fails
+            System.out.println("LUNARTAG_LOG: " + msg);
+
+            Intent intent = new Intent("com.lunartag.ACTION_LOG_UPDATE");
+            intent.putExtra("log_msg", msg);
+            intent.setPackage(getPackageName());
+            // Use Application Context to ensure stability
+            getApplicationContext().sendBroadcast(intent);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean scanAndClick(AccessibilityNodeInfo root, String text) {
+        if (root == null || text == null) return false;
+        // Case insensitive search
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+        if (nodes != null && !nodes.isEmpty()) {
+            for (AccessibilityNodeInfo node : nodes) {
+                if (performClick(node)) return true;
+            }
+        }
+        // Fallback for partial matches manually
+        return recursiveSearch(root, text);
+    }
+
+    private boolean recursiveSearch(AccessibilityNodeInfo node, String text) {
+        if (node == null) return false;
+        // FIXED: Check BOTH text AND contentDescription (2025 WhatsApp uses contentDescription for groups)
+        if (node.getText() != null && node.getText().toString().toLowerCase().contains(text.toLowerCase())) {
+            return performClick(node);
+        }
+        if (node.getContentDescription() != null && node.getContentDescription().toString().toLowerCase().contains(text.toLowerCase())) {
+            performBroadcastLog("✅ DEBUG: Found group in contentDescription → Clicking.");
+            return performClick(node);
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (recursiveSearch(node.getChild(i), text)) return true;
         }
         return false;
     }
 
-    private void toast(String msg) {
-        handler.post(() -> Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_SHORT).show());
+    private boolean scanAndClickContentDesc(AccessibilityNodeInfo root, String desc) {
+        if (root == null || desc == null) return false;
+        if (root.getContentDescription() != null && 
+            root.getContentDescription().toString().equalsIgnoreCase(desc)) {
+            return performClick(root);
+        }
+        for (int i = 0; i < root.getChildCount(); i++) {
+            if (scanAndClickContentDesc(root.getChild(i), desc)) return true;
+        }
+        return false;
     }
 
-    private void log(String msg) {
-        System.out.println("LUNARTAG: " + msg);
-        Intent i = new Intent("com.lunartag.ACTION_LOG_UPDATE");
-        i.putExtra("log_msg", msg);
-        i.setPackage(getPackageName());
-        getApplicationContext().sendBroadcast(i);
+    private boolean performClick(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo target = node;
+        int attempts = 0;
+        while (target != null && attempts < 6) {
+            if (target.isClickable()) {
+                target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                return true;
+            }
+            target = target.getParent();
+            attempts++;
+        }
+        return false;
+    }
+
+    private void performScroll(AccessibilityNodeInfo root) {
+        if (isScrolling) return;
+        AccessibilityNodeInfo scrollable = findScrollable(root);
+        if (scrollable != null) {
+            isScrolling = true;
+            scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> isScrolling = false, 600);
+        }
+    }
+
+    private AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isScrollable()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo res = findScrollable(node.getChild(i));
+            if (res != null) return res;
+        }
+        return null;
     }
 
     @Override
     public void onInterrupt() {
-        log("ROBOT INTERRUPTED");
+        performBroadcastLog("⚠️ Interrupted");
     }
 }

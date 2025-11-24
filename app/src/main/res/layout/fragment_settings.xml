@@ -115,6 +115,23 @@
                         android:maxLines="1" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- NEW: Target App Name Input (For Share Sheet) -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layout_target_app"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:hint="Target App Name (e.g. WhatsApp(Clone))">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/edit_text_target_app"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/button_save_settings"

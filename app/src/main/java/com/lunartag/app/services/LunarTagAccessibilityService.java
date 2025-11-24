@@ -18,6 +18,8 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     private static final String PREFS_ACCESSIBILITY = "LunarTagAccessPrefs";
     private static final String KEY_AUTO_MODE = "automation_mode"; 
     private static final String KEY_TARGET_GROUP = "target_group_name";
+    // NEW: The key for the text you typed in Settings
+    private static final String KEY_TARGET_APP_LABEL = "target_app_label";
 
     // STATES
     private static final int STATE_IDLE = 0;
@@ -97,9 +99,12 @@ public class LunarTagAccessibilityService extends AccessibilityService {
             if (currentState == STATE_IDLE) currentState = STATE_SEARCHING_SHARE_SHEET;
 
             if (currentState == STATE_SEARCHING_SHARE_SHEET) {
-                // Look for "Clone" text
-                if (findMarkerAndClick(root, "Clone", true)) {
-                    performBroadcastLog("✅ Found Clone. Blinking & Clicking...");
+                // FIX: Read the exact text from Settings
+                String targetAppName = prefs.getString(KEY_TARGET_APP_LABEL, "WhatsApp(Clone)");
+                
+                // Look for that text
+                if (findMarkerAndClick(root, targetAppName, true)) {
+                    performBroadcastLog("✅ Found '" + targetAppName + "'. Blinking & Clicking...");
                     currentState = STATE_SEARCHING_GROUP;
                 } else {
                     // Not found? Scroll.
@@ -172,7 +177,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
      * Finds text, Draws Red Light, Waits, Then Clicks
      */
     private boolean findMarkerAndClick(AccessibilityNodeInfo root, String text, boolean isTextSearch) {
-        if (root == null || text == null) return false;
+        if (root == null || text == null || text.isEmpty()) return false;
         
         List<AccessibilityNodeInfo> nodes;
         if (isTextSearch) {

@@ -2,9 +2,11 @@ package com.lunartag.app.services;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.GestureDescription;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,7 +21,10 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     private static final String PREFS_ACCESSIBILITY = "LunarTagAccessPrefs";
     private static final String KEY_AUTO_MODE = "automation_mode"; 
     private static final String KEY_TARGET_GROUP = "target_group_name";
-    private static final String KEY_TARGET_APP_LABEL = "target_app_label";
+    
+    // NEW: We read these for the Share Sheet blind click
+    private static final String KEY_ICON_X = "share_icon_x";
+    private static final String KEY_ICON_Y = "share_icon_y";
 
     // STATES
     private static final int STATE_IDLE = 0;
@@ -53,7 +58,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         }
 
         currentState = STATE_IDLE;
-        performBroadcastLog("🔴 ROBOT ONLINE. LEARNING MODE READY.");
+        performBroadcastLog("🔴 ROBOT ONLINE. HYBRID MODE READY.");
     }
 
     @Override
@@ -68,88 +73,67 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         
         SharedPreferences prefs = getSharedPreferences(PREFS_ACCESSIBILITY, Context.MODE_PRIVATE);
         String mode = prefs.getString(KEY_AUTO_MODE, "semi");
-
-        // READ SETTINGS
-        String targetAppName = prefs.getString(KEY_TARGET_APP_LABEL, "WhatsApp(Clone)");
         String targetGroup = prefs.getString(KEY_TARGET_GROUP, "");
-
-        // ====================================================================
-        // 0. TRAINING MODE (TEACH THE ROBOT)
-        // ====================================================================
-        if (targetAppName.equals("SETUP")) {
-            
-            // GATEKEEPER: ONLY TRAIN IF WE SEE "CANCEL" (This proves we are on Share Sheet)
-            // We ignore the App Name here so we don't accidentally learn the main app screen.
-            if (root == null || !hasText(root, "Cancel")) {
-                return; // Wait for the real Share Sheet (the one with 'Cancel')
-            }
-
-            if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-                AccessibilityNodeInfo clickedNode = event.getSource();
-                if (clickedNode != null) {
-                    String signature = extractTextFromNode(clickedNode);
-
-                    // Don't let the robot learn the word "Cancel" itself
-                    if (signature != null && !signature.isEmpty() && !cleanString(signature).contains("cancel")) {
-                        
-                        // SAVE THE LEARNED SIGNATURE
-                        prefs.edit().putString(KEY_TARGET_APP_LABEL, signature).apply();
-
-                        new Handler(Looper.getMainLooper()).post(() -> 
-                            Toast.makeText(getApplicationContext(), "✅ Robot Learned: " + signature, Toast.LENGTH_LONG).show());
-
-                        performBroadcastLog("✅ TRAINING COMPLETE. Target set to: " + signature);
-                    }
-                }
-            }
-            return; // STOP HERE.
-        }
-
-        // ====================================================================
-        // NORMAL OPERATION STARTS HERE
-        // ====================================================================
 
         if (root == null) return;
         if (isClickingPending) return;
 
         // 2. SMART CONTEXT DETECTION
 
-        // A. Are we in WhatsApp? (Look for "Send to" or Chat List)
+        // A. Are we in WhatsApp? (Text Search)
         boolean isWhatsAppUI = hasText(root, "Send to") || hasText(root, "Recent chats");
 
-        // B. Are we on the Share Sheet? 
-        // CRITICAL FIX: ONLY TRUST "CANCEL" OR "SHARE". 
-        // DO NOT TRUST 'targetAppName' (because that text exists on your Main App too!)
-        boolean isShareSheet = hasText(root, "Cancel") || hasText(root, "Share");
+        // B. Are we on the Share Sheet? (Trigger Detection)
+        // We rely ONLY on "Cancel" or the System Package to know we are here.
+        boolean isShareSheet = hasText(root, "Cancel") || pkgName.equals("android") || pkgName.equals("com.android.intentchooser");
 
-        // SAFETY: If neither Context is visible, wait.
-        // DO NOT RESET TO STATE_IDLE HERE. Just return. This fixes the "stops after 3 times" bug.
+        // --- FIX: STATE LOCK / BRAIN WIPE ---
+        // If we see the Share Sheet, it means a NEW job is starting. 
+        // Force reset the brain so it doesn't get stuck thinking about the last job.
+        if (isShareSheet) {
+             currentState = STATE_SEARCHING_SHARE_SHEET;
+        }
+
+        // Safety Return
         if (!isWhatsAppUI && !isShareSheet) {
              return; 
         }
 
         // ====================================================================
-        // 3. SHARE SHEET LOGIC (Full Auto)
+        // 3. SHARE SHEET LOGIC (COORDINATE CLICKER)
         // ====================================================================
-        if (mode.equals("full") && !isWhatsAppUI) {
+        if (mode.equals("full") && isShareSheet && !isWhatsAppUI) {
 
-            // NOW we look for the target ("WhatsApp(Clone)"). 
-            // The cleanString function handles the weird bracket newline automatically.
-            // Updated findMarkerAndClick now climbs the tree to find the Grandparent button (Red Blink Fix).
-            if (findMarkerAndClick(root, targetAppName, true)) {
-                performBroadcastLog("✅ Share Sheet: Found '" + targetAppName + "'. RED LIGHT + CLICK.");
+            // 1. Read the Saved Coordinates from Training
+            int x = prefs.getInt(KEY_ICON_X, 0);
+            int y = prefs.getInt(KEY_ICON_Y, 0);
+
+            if (x > 0 && y > 0) {
+                // 2. TRIGGER VISUAL BLINK (Simulated)
+                // We tell OverlayService to blink at this spot so you know it's working
+                if (OverlayService.getInstance() != null) {
+                    OverlayService.getInstance().showMarkerAtCoordinate(x, y);
+                }
+
+                // 3. EXECUTE BLIND CLICK (Gesture)
+                // This bypasses "Not Clickable" errors because it touches the glass directly
+                performBroadcastLog("✅ Share Sheet Detected. Firing at X=" + x + " Y=" + y);
+                dispatchGesture(createClickGesture(x, y), null, null);
+
+                // Move State Forward immediately
                 currentState = STATE_SEARCHING_GROUP;
+                
+                // Pause briefly to let the app open
+                isClickingPending = true;
+                new Handler(Looper.getMainLooper()).postDelayed(() -> isClickingPending = false, 1500);
                 return;
-            }
-
-            // If we see "Cancel" but not the app, Scroll.
-            if (hasText(root, "Cancel") && !isScrolling) {
-                performScroll(root);
+            } else {
+                performBroadcastLog("⚠️ No Coordinates! Please calibrate in Settings.");
             }
         }
 
         // ====================================================================
-        // 4. WHATSAPP LOGIC (Semi & Full) - UNTOUCHED
+        // 4. WHATSAPP LOGIC (TEXT CLICKER - UNTOUCHED)
         // ====================================================================
         if (isWhatsAppUI) {
 
@@ -158,6 +142,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
                 currentState = STATE_SEARCHING_GROUP;
             }
 
+            // SEARCH FOR GROUP (Text Logic)
             if (currentState == STATE_SEARCHING_GROUP) {
                 if (targetGroup.isEmpty()) return;
 
@@ -169,6 +154,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
                 if (!isScrolling) performScroll(root);
             }
 
+            // CLICK SEND (ID Logic)
             else if (currentState == STATE_CLICKING_SEND) {
                 boolean found = false;
                 if (findMarkerAndClickID(root, "com.whatsapp:id/conversation_send_arrow")) found = true;
@@ -187,16 +173,15 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     // UTILITIES
     // ====================================================================
 
-    private String extractTextFromNode(AccessibilityNodeInfo node) {
-        if (node == null) return null;
-        if (node.getText() != null && !node.getText().toString().isEmpty()) return node.getText().toString();
-        if (node.getContentDescription() != null && !node.getContentDescription().toString().isEmpty()) return node.getContentDescription().toString();
-
-        for (int i = 0; i < node.getChildCount(); i++) {
-            String childText = extractTextFromNode(node.getChild(i));
-            if (childText != null) return childText;
-        }
-        return null;
+    // NEW: Creates the physical tap gesture for the Share Sheet
+    private GestureDescription createClickGesture(int x, int y) {
+        Path clickPath = new Path();
+        clickPath.moveTo(x, y);
+        GestureDescription.StrokeDescription clickStroke = 
+                new GestureDescription.StrokeDescription(clickPath, 0, 100);
+        GestureDescription.Builder clickBuilder = new GestureDescription.Builder();
+        clickBuilder.addStroke(clickStroke);
+        return clickBuilder.build();
     }
 
     private boolean hasText(AccessibilityNodeInfo root, String text) {
@@ -220,24 +205,15 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         return false;
     }
 
-    // UPDATED: This now implements the "Elevator Logic" to find Grandparent buttons.
+    // Used inside WhatsApp (Text Search)
     private boolean findMarkerAndClick(AccessibilityNodeInfo root, String text, boolean isTextSearch) {
         if (root == null || text == null || text.isEmpty()) return false;
 
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
         if (nodes != null && !nodes.isEmpty()) {
             for (AccessibilityNodeInfo node : nodes) {
-                // CLIMB UP TO 6 LAYERS TO FIND A CLICKABLE ANCESTOR
-                // This forces the Red Blink even if the text itself says "Not Clickable"
-                AccessibilityNodeInfo clickable = node;
-                int depth = 0;
-                while (clickable != null && !clickable.isClickable() && depth < 6) {
-                    clickable = clickable.getParent();
-                    depth++;
-                }
-
-                if (clickable != null && clickable.isClickable()) {
-                    executeVisualClick(clickable); // Click the ANCESTOR (Grandparent), not the text
+                if (node.isClickable() || node.getParent().isClickable()) {
+                    executeVisualClick(node);
                     return true;
                 }
             }
@@ -260,12 +236,10 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         boolean match = false;
         String cleanTarget = cleanString(text);
 
-        // The cleanString removes the newline, handling the bracket issue
         if (node.getText() != null && cleanString(node.getText().toString()).contains(cleanTarget)) match = true;
         if (!match && node.getContentDescription() != null && cleanString(node.getContentDescription().toString()).contains(cleanTarget)) match = true;
 
         if (match) {
-            // CLIMB UP LOGIC (Already present here, but critical for consistency)
             AccessibilityNodeInfo clickable = node;
             while (clickable != null && !clickable.isClickable()) {
                 clickable = clickable.getParent();
@@ -286,11 +260,12 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         if (input == null) return "";
         return input.toLowerCase()
                 .replace(" ", "")
-                .replace("\n", "") // <--- REMOVES THE ENTER KEY
+                .replace("\n", "")
                 .replace("\u200B", "")
                 .trim();
     }
 
+    // Used for WhatsApp Red Blink (Draws box around View)
     private void executeVisualClick(AccessibilityNodeInfo node) {
         if (isClickingPending) return;
         isClickingPending = true;

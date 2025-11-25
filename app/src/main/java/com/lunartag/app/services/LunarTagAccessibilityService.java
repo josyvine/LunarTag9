@@ -22,7 +22,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     private static final String KEY_AUTO_MODE = "automation_mode"; 
     private static final String KEY_TARGET_GROUP = "target_group_name";
     
-    // NEW: We read these for the Share Sheet blind click
+    // Coordinates
     private static final String KEY_ICON_X = "share_icon_x";
     private static final String KEY_ICON_Y = "share_icon_y";
 
@@ -35,6 +35,9 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     private int currentState = STATE_IDLE;
     private boolean isScrolling = false;
     private boolean isClickingPending = false; 
+    
+    // NEW: ONE SHOT FLAG (Prevents machine-gun clicking)
+    private boolean hasClickedShareSheet = false;
 
     @Override
     protected void onServiceConnected() {
@@ -58,7 +61,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         }
 
         currentState = STATE_IDLE;
-        performBroadcastLog("🔴 ROBOT ONLINE. HYBRID MODE READY.");
+        performBroadcastLog("🔴 ROBOT ONLINE. ONE-SHOT MODE READY.");
     }
 
     @Override
@@ -78,20 +81,23 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         if (root == null) return;
         if (isClickingPending) return;
 
-        // 2. SMART CONTEXT DETECTION
+        // 2. CONTEXT DETECTION
 
-        // A. Are we in WhatsApp? (Text Search)
+        // A. WhatsApp Detection
         boolean isWhatsAppUI = hasText(root, "Send to") || hasText(root, "Recent chats");
 
-        // B. Are we on the Share Sheet? (Trigger Detection)
-        // We rely ONLY on "Cancel" or the System Package to know we are here.
-        boolean isShareSheet = hasText(root, "Cancel") || pkgName.equals("android") || pkgName.equals("com.android.intentchooser");
+        // B. Share Sheet Detection (Stricter)
+        // We look for "Cancel" text OR specific chooser packages.
+        boolean isShareSheet = hasText(root, "Cancel") || 
+                               pkgName.equals("android") || 
+                               pkgName.equals("com.android.intentchooser") ||
+                               pkgName.contains("chooser");
 
-        // --- FIX: STATE LOCK / BRAIN WIPE ---
-        // If we see the Share Sheet, it means a NEW job is starting. 
-        // Force reset the brain so it doesn't get stuck thinking about the last job.
-        if (isShareSheet) {
-             currentState = STATE_SEARCHING_SHARE_SHEET;
+        // --- LOGIC: RESET ONE-SHOT FLAG ---
+        // If we are NOT on the share sheet and NOT in WhatsApp, reset the flag.
+        // This means we are back at Camera or Home, ready for a new job.
+        if (!isShareSheet && !isWhatsAppUI) {
+            hasClickedShareSheet = false; 
         }
 
         // Safety Return
@@ -100,35 +106,38 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         }
 
         // ====================================================================
-        // 3. SHARE SHEET LOGIC (COORDINATE CLICKER)
+        // 3. SHARE SHEET LOGIC (ONE-SHOT COORDINATE CLICKER)
         // ====================================================================
         if (mode.equals("full") && isShareSheet && !isWhatsAppUI) {
 
-            // 1. Read the Saved Coordinates from Training
+            // CHECK: Did we already click this session?
+            if (hasClickedShareSheet) {
+                return; // STOP. Do not click again. Wait for WhatsApp to open.
+            }
+
+            // 1. Read Coordinates
             int x = prefs.getInt(KEY_ICON_X, 0);
             int y = prefs.getInt(KEY_ICON_Y, 0);
 
             if (x > 0 && y > 0) {
-                // 2. TRIGGER VISUAL BLINK (Simulated)
-                // We tell OverlayService to blink at this spot so you know it's working
+                // 2. TRIGGER VISUAL BLINK
                 if (OverlayService.getInstance() != null) {
                     OverlayService.getInstance().showMarkerAtCoordinate(x, y);
                 }
 
-                // 3. EXECUTE BLIND CLICK (Gesture)
-                // This bypasses "Not Clickable" errors because it touches the glass directly
-                performBroadcastLog("✅ Share Sheet Detected. Firing at X=" + x + " Y=" + y);
+                // 3. EXECUTE BLIND CLICK (With 100ms Duration)
+                performBroadcastLog("✅ Share Sheet Detected. Firing ONE SHOT at X=" + x + " Y=" + y);
                 dispatchGesture(createClickGesture(x, y), null, null);
 
-                // Move State Forward immediately
+                // 4. LOCK THE TRIGGER
+                hasClickedShareSheet = true; // Prevent further clicks until menu closes
+                
                 currentState = STATE_SEARCHING_GROUP;
                 
-                // Pause briefly to let the app open
+                // Pause to allow app launch
                 isClickingPending = true;
-                new Handler(Looper.getMainLooper()).postDelayed(() -> isClickingPending = false, 1500);
+                new Handler(Looper.getMainLooper()).postDelayed(() -> isClickingPending = false, 2000);
                 return;
-            } else {
-                performBroadcastLog("⚠️ No Coordinates! Please calibrate in Settings.");
             }
         }
 
@@ -136,13 +145,15 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         // 4. WHATSAPP LOGIC (TEXT CLICKER - UNTOUCHED)
         // ====================================================================
         if (isWhatsAppUI) {
+            // Reset the Share Sheet flag because we have successfully arrived in WhatsApp
+            hasClickedShareSheet = false; 
 
             if (currentState == STATE_IDLE || currentState == STATE_SEARCHING_SHARE_SHEET) {
                 performBroadcastLog("⚡ WhatsApp Detected. Searching Group...");
                 currentState = STATE_SEARCHING_GROUP;
             }
 
-            // SEARCH FOR GROUP (Text Logic)
+            // SEARCH FOR GROUP
             if (currentState == STATE_SEARCHING_GROUP) {
                 if (targetGroup.isEmpty()) return;
 
@@ -154,7 +165,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
                 if (!isScrolling) performScroll(root);
             }
 
-            // CLICK SEND (ID Logic)
+            // CLICK SEND
             else if (currentState == STATE_CLICKING_SEND) {
                 boolean found = false;
                 if (findMarkerAndClickID(root, "com.whatsapp:id/conversation_send_arrow")) found = true;
@@ -173,12 +184,15 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     // UTILITIES
     // ====================================================================
 
-    // NEW: Creates the physical tap gesture for the Share Sheet
+    // UPDATED: Creates a robust 100ms tap
     private GestureDescription createClickGesture(int x, int y) {
         Path clickPath = new Path();
         clickPath.moveTo(x, y);
+        
+        // Duration 100ms: Ensures Android registers it as a valid tap
         GestureDescription.StrokeDescription clickStroke = 
                 new GestureDescription.StrokeDescription(clickPath, 0, 100);
+        
         GestureDescription.Builder clickBuilder = new GestureDescription.Builder();
         clickBuilder.addStroke(clickStroke);
         return clickBuilder.build();
@@ -205,7 +219,6 @@ public class LunarTagAccessibilityService extends AccessibilityService {
         return false;
     }
 
-    // Used inside WhatsApp (Text Search)
     private boolean findMarkerAndClick(AccessibilityNodeInfo root, String text, boolean isTextSearch) {
         if (root == null || text == null || text.isEmpty()) return false;
 
@@ -265,7 +278,6 @@ public class LunarTagAccessibilityService extends AccessibilityService {
                 .trim();
     }
 
-    // Used for WhatsApp Red Blink (Draws box around View)
     private void executeVisualClick(AccessibilityNodeInfo node) {
         if (isClickingPending) return;
         isClickingPending = true;

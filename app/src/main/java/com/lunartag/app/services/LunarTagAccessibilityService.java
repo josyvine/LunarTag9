@@ -35,6 +35,11 @@ public class LunarTagAccessibilityService extends AccessibilityService {
     private boolean isScrolling = false;
     private long lastToastTime = 0;
 
+    // --- FIX: Added these two missing variables to solve the build error ---
+    private static final int STATE_IDLE = 0;
+    private int currentState = STATE_IDLE;
+    // ---------------------------------------------------------------------
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
@@ -303,6 +308,7 @@ public class LunarTagAccessibilityService extends AccessibilityService {
 
     @Override
     public void onInterrupt() {
+        // This line was causing the error because variables were undefined. Fixed now.
         currentState = STATE_IDLE;
         if (OverlayService.getInstance() != null) OverlayService.getInstance().hideMarker();
     }
